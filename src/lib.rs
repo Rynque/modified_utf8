@@ -90,3 +90,57 @@ impl Error {
         }
     }
 }
+
+fn encoded_len(s: &str) -> usize {
+    let mut len = 0;
+    for ch in s.chars() {
+        len += match ch {
+            '\0' => 2,
+            _ if (ch as u32) <= 0x007F => 1,
+            _ if (ch as u32) <= 0x07FF => 2,
+            _ if (ch as u32) <= 0xFFFF => 3,
+            _ => 6,
+        }
+    }
+    len
+}
+
+/// Encodes a string into Modified UTF-8 bytes.
+pub fn encode(s: &str) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(encoded_len(s));
+
+    for ch in s.chars() {
+        let code = ch as u32;
+        if ch == '\0' {
+            bytes.extend_from_slice(&[0b1100_0000, 0b1000_0000]);
+        } else if code <= 0x007F {
+            bytes.push(ch as u8);
+        } else if code <= 0x07FF {
+            bytes.extend_from_slice(&[
+                (0b1100_0000 | (code >> 6)) as u8,
+                (0b1000_0000 | (code & 0b0011_1111)) as u8,
+            ]);
+        } else if code <= 0xFFFF {
+            bytes.extend_from_slice(&[
+                (0b1110_0000 | (code >> 12)) as u8,
+                (0b1000_0000 | ((code >> 6) & 0b0011_1111)) as u8,
+                (0b1000_0000 | (code & 0b0011_1111)) as u8,
+            ]);
+        } else {
+            let offset = code - 0x10000;
+            let high = 0xD800 | (offset >> 10);
+            let low = 0xDC00 | (offset & 0x3FF);
+
+            bytes.extend_from_slice(&[
+                (0b1110_0000 | (high >> 12)) as u8,
+                (0b1000_0000 | ((high >> 6) & 0b0011_1111)) as u8,
+                (0b1000_0000 | (high & 0b0011_1111)) as u8,
+                (0b1110_0000 | (low >> 12)) as u8,
+                (0b1000_0000 | ((low >> 6) & 0b0011_1111)) as u8,
+                (0b1000_0000 | (low & 0b0011_1111)) as u8,
+            ]);
+        }
+    }
+
+    bytes
+}
