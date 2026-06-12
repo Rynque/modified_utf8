@@ -474,7 +474,7 @@ pub fn decode_lossy(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn roundtrip_empty() {
         let s = "";
@@ -482,7 +482,7 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded, s);
     }
-    
+
     #[test]
     fn roundtrip_ascii() {
         let s = "Hello, world!";
@@ -490,7 +490,7 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded, s);
     }
-    
+
     #[test]
     fn roundtrip_bmp() {
         let s = "世界你好！";
@@ -498,7 +498,7 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded, s);
     }
-    
+
     #[test]
     fn roundtrip_smp() {
         let s = "𝕙𝕖𝕝𝕝𝕠 𝕨𝕠𝕣𝕝𝕕";
@@ -506,7 +506,7 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded, s);
     }
-    
+
     #[test]
     fn roundtrip_sip() {
         let s = "\u{20000}";
@@ -514,7 +514,7 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded, s);
     }
-    
+
     #[test]
     fn roundtrip_ssp() {
         let s = "\u{E0001}";
@@ -522,7 +522,7 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded, s);
     }
-    
+
     #[test]
     fn encode_null() {
         let s = "\0";
@@ -531,28 +531,31 @@ mod tests {
         let decoded = decode(&encoded).unwrap();
         assert_eq!(decoded, s);
     }
-    
+
     #[test]
     fn decode_null() {
         let bytes = &[0b1100_0000, 0b1000_0000];
         let decoded = decode(bytes).unwrap();
         assert_eq!(decoded, "\0");
     }
-    
+
     #[test]
     fn encode_smp() {
         let s = "𝕣"; // U+1D563
         let encoded = encode(s);
-        assert_eq!(encoded, &[
-            0b1110_1101,
-            0b1010_0000,
-            0b1011_0101,
-            0b1110_1101,
-            0b1011_0101,
-            0b1010_0011,
-        ]);
+        assert_eq!(
+            encoded,
+            &[
+                0b1110_1101,
+                0b1010_0000,
+                0b1011_0101,
+                0b1110_1101,
+                0b1011_0101,
+                0b1010_0011,
+            ]
+        );
     }
-    
+
     #[test]
     fn decode_smp() {
         let bytes = &[
@@ -566,92 +569,156 @@ mod tests {
         let decoded = decode(bytes).unwrap();
         assert_eq!(decoded, "𝕣");
     }
-    
+
     #[test]
     fn decode_empty() {
         assert_eq!(decode(&[]), Ok(String::new()));
     }
-    
+
     #[test]
     fn decode_null_byte() {
         let bytes = &[0x00];
         let decoded = decode(bytes);
-        assert!(matches!(decoded, Err(Error::InvalidStartByte { pos: 0, byte: 0x00 })));
+        assert!(matches!(
+            decoded,
+            Err(Error::InvalidStartByte { pos: 0, byte: 0x00 })
+        ));
     }
-    
+
     #[test]
     fn decode_unexpected_eof() {
         let bytes = &[0b1110_0000];
         let decoded = decode(bytes);
-        assert!(matches!(decoded, Err(Error::UnexpectedEof { pos: 0, expected: 2 })));
+        assert!(matches!(
+            decoded,
+            Err(Error::UnexpectedEof {
+                pos: 0,
+                expected: 2
+            })
+        ));
     }
-    
+
     #[test]
     fn decode_invalid_start_byte() {
         let bytes = &[0b1111_1111];
         let decoded = decode(bytes);
-        assert!(matches!(decoded, Err(Error::InvalidStartByte { pos: 0, byte: 0b1111_1111 })));
+        assert!(matches!(
+            decoded,
+            Err(Error::InvalidStartByte {
+                pos: 0,
+                byte: 0b1111_1111
+            })
+        ));
     }
-    
+
     #[test]
     fn decode_invalid_continuation() {
         let bytes = &[0b1100_0001, 0b1111_0010];
         let decoded = decode(bytes);
-        assert!(matches!(decoded, Err(Error::InvalidContinuation { start_pos: 0, pos: 1, byte: 0b1111_0010 })));
+        assert!(matches!(
+            decoded,
+            Err(Error::InvalidContinuation {
+                start_pos: 0,
+                pos: 1,
+                byte: 0b1111_0010
+            })
+        ));
     }
-    
+
     #[test]
     fn decode_overlong_encoding() {
         let bytes = &[0b1100_0001, 0b1011_0010];
         let decoded = decode(bytes);
-        assert!(matches!(decoded, Err(Error::OverlongEncoding { start_pos: 0, len: 2 })));
+        assert!(matches!(
+            decoded,
+            Err(Error::OverlongEncoding {
+                start_pos: 0,
+                len: 2
+            })
+        ));
     }
-    
+
     #[test]
     fn decode_lone_surrogate() {
         let bytes = &[0b1110_1101, 0b1010_0000, 0b1000_0000];
         let decoded = decode(bytes);
-        assert!(matches!(decoded, Err(Error::LoneSurrogate { start_pos: 0, len: 3 })));
+        assert!(matches!(
+            decoded,
+            Err(Error::LoneSurrogate {
+                start_pos: 0,
+                len: 3
+            })
+        ));
     }
-    
+
     #[test]
     fn decode_lossy_empty() {
         assert_eq!(decode_lossy(&[]), "");
     }
-    
+
     #[test]
     fn decode_lossy_null_byte() {
         let bytes = &[0x00];
         assert_eq!(decode_lossy(bytes), "\u{FFFD}");
     }
-    
+
     #[test]
     fn decode_lossy_unexpected_eof() {
         let bytes = &[0b1110_0000];
         assert_eq!(decode_lossy(bytes), "\u{FFFD}");
     }
-    
+
     #[test]
     fn decode_lossy_invalid_start_byte() {
         let bytes = &[0b1111_1111];
         assert_eq!(decode_lossy(bytes), "\u{FFFD}");
     }
-    
+
     #[test]
     fn decode_lossy_invalid_continuation() {
         let bytes = &[0b1100_0001, 0b1111_0010];
         assert_eq!(decode_lossy(bytes), "\u{FFFD}\u{FFFD}");
     }
-    
+
     #[test]
     fn decode_lossy_overlong_encoding() {
         let bytes = &[0b1100_0001, 0b1011_0010];
         assert_eq!(decode_lossy(bytes), "\u{FFFD}");
     }
-    
+
     #[test]
     fn decode_lossy_lone_surrogate() {
         let bytes = &[0b1110_1101, 0b1010_0000, 0b1000_0000];
         assert_eq!(decode_lossy(bytes), "\u{FFFD}");
+    }
+}
+
+#[cfg(feature = "proptest")]
+#[cfg(test)]
+mod proptest_tests {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn roundtrip_any_string(s in "\\PC*") {
+            let encoded = encode(&s);
+            let decoded = decode(&encoded).unwrap();
+            assert_eq!(decoded, s);
+        }
+
+        #[test]
+        fn roundtrip_lossy_same_as_exact(s in "\\PC*") {
+            let encoded = encode(&s);
+            let decoded_exact = decode(&encoded).unwrap();
+            let decoded_lossy = decode_lossy(&encoded);
+            assert_eq!(decoded_exact, decoded_lossy);
+        }
+
+        #[test]
+        fn decode_lossy_never_panics(bytes in any::<Vec<u8>>()) {
+            let result = decode_lossy(&bytes);
+            assert!(std::str::from_utf8(result.as_bytes()).is_ok());
+        }
     }
 }

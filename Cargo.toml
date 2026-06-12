@@ -8,3 +8,9 @@ repository = "https://github.com/Rynque/modified_utf8"
 keywords = ["mutf8"]
 
 [dependencies]
+
+[features]
+proptest = []
+
+[dev-dependencies]
+proptest = "1.11.0"
