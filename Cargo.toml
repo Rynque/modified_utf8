@@ -1,0 +1,10 @@
+[package]
+name = "modified_utf8"
+version = "0.1.0"
+edition = "2024"
+description = "Modified UTF-8 encoding and decoding utilities"
+license = "MIT"
+repository = "https://github.com/Rynque/modified_utf8"
+keywords = ["mutf8"]
+
+[dependencies]
