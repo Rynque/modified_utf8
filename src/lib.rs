@@ -144,3 +144,177 @@ pub fn encode(s: &str) -> Vec<u8> {
 
     bytes
 }
+
+fn is_continuation_byte(b: u8) -> bool {
+    (b & 0b1100_0000) == 0b1000_0000
+}
+
+/// Decodes Modified UTF-8 bytes back into a string.
+pub fn decode(bytes: &[u8]) -> Result<String, Error> {
+    let mut result = String::new();
+    let mut i = 0;
+    let len = bytes.len();
+
+    while i < len {
+        let b0 = bytes[i];
+        if b0 == 0x00 {
+            return Err(Error::InvalidStartByte { pos: i, byte: b0 });
+        } else if (b0 & 0b1000_0000) == 0b0000_0000 {
+            result.push(b0 as char);
+            i += 1;
+            continue;
+        } else if (b0 & 0b1110_0000) == 0b1100_0000 {
+            if i + 1 >= len {
+                return Err(Error::UnexpectedEof {
+                    pos: i,
+                    expected: 1,
+                });
+            }
+            let b1 = bytes[i + 1];
+            if !is_continuation_byte(b1) {
+                return Err(Error::InvalidContinuation {
+                    start_pos: i,
+                    pos: i + 1,
+                    byte: b1,
+                });
+            }
+
+            let code = ((b0 & 0b0001_1111) as u32) << 6 | (b1 & 0b0011_1111) as u32;
+
+            if code != 0x0000 && code <= 0x007F {
+                return Err(Error::OverlongEncoding {
+                    start_pos: i,
+                    len: 2,
+                });
+            }
+            result.push(char::from_u32(code).unwrap());
+            i += 2;
+            continue;
+        } else if (b0 & 0b1111_0000) == 0b1110_0000 {
+            if i + 1 >= len {
+                return Err(Error::UnexpectedEof {
+                    pos: i,
+                    expected: 2,
+                });
+            }
+            let b1 = bytes[i + 1];
+            if !is_continuation_byte(b1) {
+                return Err(Error::InvalidContinuation {
+                    start_pos: i,
+                    pos: i + 1,
+                    byte: b1,
+                });
+            }
+
+            if i + 2 >= len {
+                return Err(Error::UnexpectedEof {
+                    pos: i,
+                    expected: 1,
+                });
+            }
+            let b2 = bytes[i + 2];
+            if !is_continuation_byte(b2) {
+                return Err(Error::InvalidContinuation {
+                    start_pos: i,
+                    pos: i + 2,
+                    byte: b2,
+                });
+            }
+
+            let code = ((b0 & 0b0000_1111) as u32) << 12
+                | ((b1 & 0b0011_1111) as u32) << 6
+                | (b2 & 0b0011_1111) as u32;
+
+            if code <= 0x07FF {
+                return Err(Error::OverlongEncoding {
+                    start_pos: i,
+                    len: 3,
+                });
+            }
+
+            if (0xD800..=0xDBFF).contains(&code) {
+                if i + 3 >= len {
+                    return Err(Error::LoneSurrogate {
+                        start_pos: i,
+                        len: 3,
+                    });
+                }
+                let b3 = bytes[i + 3];
+                if (b3 & 0b1111_0000) != 0b1110_0000 {
+                    return Err(Error::InvalidStartByte {
+                        pos: i + 3,
+                        byte: b3,
+                    });
+                }
+
+                if i + 4 >= len {
+                    return Err(Error::UnexpectedEof {
+                        pos: i + 3,
+                        expected: 2,
+                    });
+                }
+                let b4 = bytes[i + 4];
+                if !is_continuation_byte(b4) {
+                    return Err(Error::InvalidContinuation {
+                        start_pos: i + 3,
+                        pos: i + 4,
+                        byte: b4,
+                    });
+                }
+
+                if i + 5 >= len {
+                    return Err(Error::UnexpectedEof {
+                        pos: i + 3,
+                        expected: 1,
+                    });
+                }
+                let b5 = bytes[i + 5];
+                if !is_continuation_byte(b5) {
+                    return Err(Error::InvalidContinuation {
+                        start_pos: i + 3,
+                        pos: i + 5,
+                        byte: b5,
+                    });
+                }
+
+                let high = code;
+                let low = ((b3 & 0b0000_1111) as u32) << 12
+                    | ((b4 & 0b0011_1111) as u32) << 6
+                    | (b5 & 0b0011_1111) as u32;
+
+                if !(0xDC00..=0xDFFF).contains(&low) {
+                    return Err(Error::LoneSurrogate {
+                        start_pos: i,
+                        len: 3,
+                    });
+                }
+
+                let code = ((high as u32 - 0xD800) << 10) + (low as u32 - 0xDC00) + 0x10000;
+
+                if code <= 0xFFFF {
+                    return Err(Error::OverlongEncoding {
+                        start_pos: i,
+                        len: 6,
+                    });
+                }
+
+                result.push(char::from_u32(code).unwrap());
+                i += 6;
+                continue;
+            } else if (0xDC00..=0xDFFF).contains(&code) {
+                return Err(Error::LoneSurrogate {
+                    start_pos: i,
+                    len: 3,
+                });
+            } else {
+                result.push(char::from_u32(code).unwrap());
+                i += 3;
+                continue;
+            }
+        } else {
+            return Err(Error::InvalidStartByte { pos: i, byte: b0 });
+        }
+    }
+
+    Ok(result)
+}
