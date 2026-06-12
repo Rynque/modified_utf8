@@ -318,3 +318,155 @@ pub fn decode(bytes: &[u8]) -> Result<String, Error> {
 
     Ok(result)
 }
+
+/// Decodes Modified UTF-8 bytes back into a string, replacing invalid sequences with the Unicode replacement character (U+FFFD).
+pub fn decode_lossy(bytes: &[u8]) -> String {
+    let mut result = String::new();
+    let mut i = 0;
+    let len = bytes.len();
+
+    while i < len {
+        let b0 = bytes[i];
+        if b0 == 0x00 {
+            result.push('\u{FFFD}');
+            i += 1;
+            continue;
+        } else if (b0 & 0b1000_0000) == 0b0000_0000 {
+            result.push(b0 as char);
+            i += 1;
+            continue;
+        } else if (b0 & 0b1110_0000) == 0b1100_0000 {
+            if i + 1 >= len {
+                result.push('\u{FFFD}');
+                i += 1;
+                continue;
+            }
+            let b1 = bytes[i + 1];
+            if !is_continuation_byte(b1) {
+                result.push('\u{FFFD}');
+                i += 1;
+                continue;
+            }
+
+            let code = ((b0 & 0b0001_1111) as u32) << 6 | (b1 & 0b0011_1111) as u32;
+
+            if code != 0x0000 && code <= 0x007F {
+                result.push('\u{FFFD}');
+                i += 2;
+                continue;
+            }
+            result.push(char::from_u32(code).unwrap());
+            i += 2;
+            continue;
+        } else if (b0 & 0b1111_0000) == 0b1110_0000 {
+            if i + 1 >= len {
+                result.push('\u{FFFD}');
+                i += 1;
+                continue;
+            }
+            let b1 = bytes[i + 1];
+            if !is_continuation_byte(b1) {
+                result.push('\u{FFFD}');
+                i += 1;
+                continue;
+            }
+
+            if i + 2 >= len {
+                result.push('\u{FFFD}');
+                i += 2;
+                continue;
+            }
+            let b2 = bytes[i + 2];
+            if !is_continuation_byte(b2) {
+                result.push('\u{FFFD}');
+                i += 2;
+                continue;
+            }
+
+            let code = ((b0 & 0b0000_1111) as u32) << 12
+                | ((b1 & 0b0011_1111) as u32) << 6
+                | (b2 & 0b0011_1111) as u32;
+
+            if code <= 0x07FF {
+                result.push('\u{FFFD}');
+                i += 3;
+                continue;
+            }
+
+            if (0xD800..=0xDBFF).contains(&code) {
+                if i + 3 >= len {
+                    result.push('\u{FFFD}');
+                    i += 3;
+                    continue;
+                }
+                let b3 = bytes[i + 3];
+                if (b3 & 0b1111_0000) != 0b1110_0000 {
+                    result.push('\u{FFFD}');
+                    i += 3;
+                    continue;
+                }
+
+                if i + 4 >= len {
+                    result.push('\u{FFFD}');
+                    i += 3;
+                    continue;
+                }
+                let b4 = bytes[i + 4];
+                if !is_continuation_byte(b4) {
+                    result.push('\u{FFFD}');
+                    i += 3;
+                    continue;
+                }
+
+                if i + 5 >= len {
+                    result.push('\u{FFFD}');
+                    i += 3;
+                    continue;
+                }
+                let b5 = bytes[i + 5];
+                if !is_continuation_byte(b5) {
+                    result.push('\u{FFFD}');
+                    i += 3;
+                    continue;
+                }
+
+                let high = code;
+                let low = ((b3 & 0b0000_1111) as u32) << 12
+                    | ((b4 & 0b0011_1111) as u32) << 6
+                    | (b5 & 0b0011_1111) as u32;
+                    
+                if !(0xDC00..=0xDFFF).contains(&low) {
+                    result.push('\u{FFFD}');
+                    i += 3;
+                    continue;
+                }
+
+                let code = ((high as u32 - 0xD800) << 10) + (low as u32 - 0xDC00) + 0x10000;
+
+                if code <= 0xFFFF {
+                    result.push_str("\u{FFFD}\u{FFFD}");
+                    i += 6;
+                    continue;
+                }
+
+                result.push(char::from_u32(code).unwrap());
+                i += 6;
+                continue;
+            } else if (0xDC00..=0xDFFF).contains(&code) {
+                result.push('\u{FFFD}');
+                i += 3;
+                continue;
+            } else {
+                result.push(char::from_u32(code).unwrap());
+                i += 3;
+                continue;
+            }
+        } else {
+            result.push('\u{FFFD}');
+            i += 1;
+            continue;
+        }
+    }
+
+    result
+}
